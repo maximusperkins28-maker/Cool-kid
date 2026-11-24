@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Movable Character</title>
   <style>
     :root { color-scheme: dark; }
@@ -10,15 +10,19 @@
     body {
       margin: 0;
       min-height: 100vh;
+      min-height: 100dvh;
       overflow: hidden;
       display: grid;
       place-items: center;
       background: linear-gradient(135deg, #1b263b, #415a77);
       font-family: system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #game {
       width: min(900px, 100vw);
       height: min(600px, 100vh);
+      height: min(600px, 100dvh);
       position: relative;
       overflow: hidden;
       background:
@@ -26,15 +30,16 @@
         linear-gradient(180deg, #48cae4 0 66%, #80b918 66% 100%);
       background-size: 28px 28px, auto;
       border: 4px solid #0d1b2a;
+      touch-action: none;
     }
     #character {
       position: absolute;
-      left: 400px;
-      top: 300px;
+      left: 50%;
+      top: 50%;
       width: 48px;
       height: 64px;
       transform: translate(-50%, -50%);
-      transition: transform 60ms linear;
+      pointer-events: none;
     }
     #character .head {
       width: 38px;
@@ -59,12 +64,56 @@
     #hint {
       position: absolute;
       left: 12px;
-      bottom: 10px;
+      top: 10px;
       color: #0d1b2a;
-      background: rgba(255,255,255,.75);
+      background: rgba(255,255,255,.78);
       border-radius: 8px;
       padding: 6px 10px;
       font-weight: 700;
+      pointer-events: none;
+    }
+    #controls {
+      position: absolute;
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: repeat(3, 58px);
+      grid-template-rows: repeat(2, 58px);
+      gap: 8px;
+      touch-action: none;
+    }
+    .control {
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(255,255,255,.75);
+      border-radius: 16px;
+      background: rgba(13, 27, 42, .72);
+      color: white;
+      font: 700 27px/1 system-ui, sans-serif;
+      box-shadow: 0 3px 8px rgba(0,0,0,.25);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+    .control:active, .control.pressed {
+      background: #ff9f1c;
+      color: #0d1b2a;
+      transform: scale(.95);
+    }
+    [data-direction="up"] { grid-column: 2; grid-row: 1; }
+    [data-direction="left"] { grid-column: 1; grid-row: 2; }
+    [data-direction="down"] { grid-column: 2; grid-row: 2; }
+    [data-direction="right"] { grid-column: 3; grid-row: 2; }
+    @media (max-width: 600px) {
+      #game { width: 100vw; height: 100vh; height: 100dvh; border-width: 0; }
+      #controls {
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(20px, env(safe-area-inset-bottom));
+        grid-template-columns: repeat(3, 64px);
+        grid-template-rows: repeat(2, 64px);
+        gap: 9px;
+      }
+      .control { border-radius: 18px; font-size: 30px; }
+      #hint { top: max(12px, env(safe-area-inset-top)); }
     }
   </style>
 </head>
@@ -74,51 +123,100 @@
       <div class="head"></div>
       <div class="body"></div>
     </div>
-    <div id="hint">Move with WASD or arrow keys</div>
+    <div id="hint">Move with buttons or WASD / arrow keys</div>
+    <div id="controls" aria-label="Touch movement controls">
+      <button class="control" type="button" data-direction="up" aria-label="Move up">▲</button>
+      <button class="control" type="button" data-direction="left" aria-label="Move left">◀</button>
+      <button class="control" type="button" data-direction="down" aria-label="Move down">▼</button>
+      <button class="control" type="button" data-direction="right" aria-label="Move right">▶</button>
+    </div>
   </main>
 
   <script>
     const game = document.getElementById('game');
     const character = document.getElementById('character');
     const keys = new Set();
-    let x = 400;
-    let y = 300;
+    const directions = {
+      up: 'arrowup',
+      down: 'arrowdown',
+      left: 'arrowleft',
+      right: 'arrowright'
+    };
+    let x = 0;
+    let y = 0;
     const speed = 4;
 
-    addEventListener('keydown', (event) => {
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(event.key)) {
-        event.preventEvent?.();
+    function updatePosition() {
+      const bounds = game.getBoundingClientRect();
+      x = Math.max(24, Math.min(bounds.width - 24, x));
+      y = Math.max(32, Math.min(bounds.height - 32, y));
+      character.style.left = `${x}px`;
+      character.style.top = `${y}px`;
+    }
+
+    function setDirection(button, pressed) {
+      const direction = directions[button.dataset.direction];
+      if (pressed) keys.add(direction);
+      else keys.delete(direction);
+      button.classList.toggle('pressed', pressed);
+    }
+
+    document.querySelectorAll('.control').forEach((button) => {
+      button.addEventListener('pointerdown', (event) => {
         event.preventDefault();
-        keys.add(event.key.toLowerCase());
+        button.setPointerCapture(event.pointerId);
+        setDirection(button, true);
+      });
+      const release = () => setDirection(button, false);
+      button.addEventListener('pointerup', release);
+      button.addEventListener('pointercancel', release);
+      button.addEventListener('lostpointercapture', release);
+      button.addEventListener('contextmenu', (event) => event.preventDefault());
+    });
+
+    addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      const aliases = { w: 'arrowup', s: 'arrowdown', a: 'arrowleft', d: 'arrowright' };
+      const direction = aliases[key] || key;
+      if (Object.values(directions).includes(direction)) {
+        event.preventDefault();
+        keys.add(direction);
       }
     });
-    addEventListener('keyup', (event) => keys.delete(event.key.toLowerKey()));
+    addEventListener('keyup', (event) => {
+      const key = event.key.toLowerCase();
+      const aliases = { w: 'arrowup', s: 'arrowdown', a: 'arrowleft', d: 'arrowright' };
+      keys.delete(aliases[key] || key);
+    });
+    addEventListener('blur', () => keys.clear());
 
     function tick() {
-      const left = keys.has('a') || keys.has('arrowleft');
-      const right = keys.has('d') || keys.has('arrowright');
-      const up = keys.has('w') || keys.has('arrowup');
-      const down = keys.has('s') || keys.has('arrowdown');
+      const left = keys.has('arrowleft');
+      const right = keys.has('arrowright');
+      const up = keys.has('arrowup');
+      const down = keys.has('arrowdown');
 
       if (left) x -= speed;
       if (right) x += speed;
       if (up) y -= speed;
       if (down) y += speed;
+      updatePosition();
 
-      const bounds = game.getBoundingClientRect();
-      x = Math.max(24, Math.min(bounds.width - 24, x));
-      y = Math.max(32, Math.min(bounds.height - 32, y));
-
-      character.style.left = `${x}px`;
-      character.style.top = `${y}px`;
       character.classList.toggle('walking', left || right || up || down);
-
-      if (left && !right) character.style.transform = 'translate(-50%, -50%) scaleX(-1)';
-      else character.style.transform = 'translate(-50%, -50%)';
-
+      character.style.transform = left && !right
+        ? 'translate(-50%, -50%) scaleX(-1)'
+        : 'translate(-50%, -50%)';
       requestAnimationFrame(tick);
     }
-    tick();
+
+    addEventListener('resize', updatePosition);
+    requestAnimationFrame(() => {
+      const bounds = game.getBoundingClientRect();
+      x = bounds.width / 2;
+      y = bounds.height / 2;
+      updatePosition();
+      tick();
+    });
   </script>
 </body>
 </html>
